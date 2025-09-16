@@ -13,7 +13,7 @@ This repository contains the complete implementation and documentation of a **Re
 
 The project addresses the critical challenge of automatically segmenting retinal blood vessels from fundus images to aid in early detection of diabetic retinopathy and other vascular diseases. The solution implements an enhanced U-Net architecture with attention mechanisms and introduces a patch-based training strategy to overcome dataset limitations.
 
-![Dataset Example](RBVS/figure_dataset_example.png)
+![Dataset Example](Figures/figure_dataset_example.png)
 *Example of retinal fundus image from the DRIVE dataset and corresponding vessel segmentation*
 
 ### Key Contributions
@@ -30,7 +30,7 @@ The project addresses the critical challenge of automatically segmenting retinal
 - **IoU (Intersection over Union)**: 63.83%
 - **F1-Score**: 77.87%
 
-![Performance Metrics](RBVS/figure_overall_average_metrics.png)
+![Performance Metrics](Figures/figure_overall_average_metrics.png)
 *Overall performance metrics achieved on the DRIVE test dataset*
 
 ### Key Technical Innovations
@@ -84,7 +84,7 @@ The project addresses the critical challenge of automatically segmenting retinal
 - **Inference Stride**: 64 pixels (reduced redundancy)
 - **Total Patches**: ~63,800 from 20 training images
 
-![Patch Examples](RBVS/figure_patch_examples.png)
+![Patch Examples](Figures/figure_patch_examples.png)
 *Examples of extracted patches used for training, showing input images and corresponding ground truth masks*
 
 #### 3. Network Architecture
@@ -124,7 +124,7 @@ The attention gates filter encoder features before skip connections:
 - Probability accumulation and normalization
 - Binary thresholding (τ = 0.5)
 
-![Patch Predictions](RBVS/figure_patches_raw_pred_gt.png)
+![Patch Predictions](Figures/figure_patches_raw_pred_gt.png)
 *Visualization of patch-level predictions: raw patches, model predictions, and ground truth masks*
 
 ## Results and Analysis
@@ -144,7 +144,7 @@ The model achieved competitive performance on the DRIVE benchmark:
 - Maintained high overall accuracy
 - Reduced false positive rate compared to traditional preprocessing
 
-![Qualitative Results](RBVS/figure_image_1_metrics_and_masks.png)
+![Qualitative Results](Figures/figure_image_1_metrics_and_masks.png)
 *Detailed analysis of segmentation results: input image, predicted mask, ground truth, and overlay comparison*
 
 ### Limitations Identified
@@ -152,7 +152,7 @@ The model achieved competitive performance on the DRIVE benchmark:
 2. **Computational Cost**: Dense patch sampling increases memory usage
 3. **Inference Time**: Overlap-averaging adds computational overhead
 
-![Prediction Overlay](RBVS/figure_gt_vs_pred_overlay.png)
+![Prediction Overlay](Figures/figure_gt_vs_pred_overlay.png)
 *Overlay comparison showing ground truth (red) vs predictions (green) highlighting model performance*
 
 ## Generated Visualizations
@@ -169,16 +169,6 @@ The project includes comprehensive visualizations that demonstrate the effective
 - **Patch Sampling**: Visualization of training data augmentation strategy
 - **Attention Mechanism**: How attention gates improve feature selection
 - **Inference Pipeline**: Step-by-step prediction process visualization
-
-All figures are available in the `figures/` directory and referenced throughout the scientific documentation.
-
-## Scientific Documentation
-
-### Publications and Reports
-- **Complete Scientific Paper**: `RBVS/main.tex` with full methodology
-- **Technical Report**: Comprehensive 15+ page analysis
-- **Bibliography**: 10+ relevant research citations
-- **Reproducible Research**: All code and weights available
 
 ### Course Context
 This project was developed as part of an **Extension of Hands-on Activity** in the Computer Vision course. It builds upon the semantic segmentation laboratory exercise and extends it to a specialized medical imaging application. The project follows scientific writing standards and includes:
