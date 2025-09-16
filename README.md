@@ -4,11 +4,6 @@
 
 This repository contains the complete implementation and documentation of a **Retinal Blood Vessel Segmentation** project using **Attention U-Net** with patch-based training. This work was developed as part of a Computer Vision course at the University of Genoa in the second semester of 2025.
 
-**Student:** Sepehr Khodadadi Hosseinabadi (6660699)  
-**Institution:** University of Genoa  
-**Course:** Computer Vision  
-**Project Focus:** Medical Image Segmentation for Diabetic Retinopathy Detection
-
 ## Project Description
 
 The project addresses the critical challenge of automatically segmenting retinal blood vessels from fundus images to aid in early detection of diabetic retinopathy and other vascular diseases. The solution implements an enhanced U-Net architecture with attention mechanisms and introduces a patch-based training strategy to overcome dataset limitations.
@@ -169,15 +164,6 @@ The project includes comprehensive visualizations that demonstrate the effective
 - **Patch Sampling**: Visualization of training data augmentation strategy
 - **Attention Mechanism**: How attention gates improve feature selection
 - **Inference Pipeline**: Step-by-step prediction process visualization
-
-### Course Context
-This project was developed as part of an **Extension of Hands-on Activity** in the Computer Vision course. It builds upon the semantic segmentation laboratory exercise and extends it to a specialized medical imaging application. The project follows scientific writing standards and includes:
-
-- Structured abstract and introduction
-- Comprehensive related work analysis
-- Detailed methodology description
-- Rigorous experimental evaluation
-- Critical analysis of results and limitations
 
 ## Usage and Reproducibility
 
