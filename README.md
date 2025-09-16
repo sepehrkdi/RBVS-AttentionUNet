@@ -234,6 +234,6 @@ If you use this work in your research, please cite:
 
 ---
 
-**Contact**: Sepehr Khodadadi Hosseinabadi (Student ID: 6660699)  
+**Contact**: Sepehr Khodadadi
 **University**: University of Genoa  
 **Date**: June 2025
