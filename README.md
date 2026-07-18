@@ -1,239 +1,160 @@
-# Retinal Blood Vessel Segmentation Project
+# Retinal Blood-Vessel Segmentation with an Attention U-Net (PyTorch)
 
-## Overview
+Patch-based **Attention U-Net** for retinal blood-vessel segmentation on the
+**DRIVE** dataset. Originally a University of Genoa Computer Vision course project
+(2025); this is a clean, reproducible **PyTorch** re-implementation with a `src/`
+package, seeded training, explainability artifacts, and honest reporting.
 
-This repository contains the complete implementation and documentation of a **Retinal Blood Vessel Segmentation** project using **Attention U-Net** with patch-based training. This work was developed as part of a Computer Vision course at the University of Genoa in the second semester of 2025.
+> **Reproducibility note.** The original model was trained in TensorFlow/Keras on
+> Colab; that run was **unseeded** and its checkpoint was **lost**. This repo
+> re-implements the exact architecture and hyperparameters in PyTorch and
+> **retrains from scratch** on a local GPU. The numbers reported in
+> [results.md](results.md) come from that seeded retrain and are the committed
+> truth — they may drift slightly from the originally reported
+> 0.9639 / 0.6383 / 0.7787 (accuracy / IoU / F1). The original TF notebook is kept
+> verbatim as [CV_Project.ipynb](CV_Project.ipynb) for provenance.
 
-## Project Description
-
-The project addresses the critical challenge of automatically segmenting retinal blood vessels from fundus images to aid in early detection of diabetic retinopathy and other vascular diseases. The solution implements an enhanced U-Net architecture with attention mechanisms and introduces a patch-based training strategy to overcome dataset limitations.
-
-![Dataset Example](Figures/figure_dataset_example.png)
-*Example of retinal fundus image from the DRIVE dataset and corresponding vessel segmentation*
-
-### Key Contributions
-
-1. **Attention U-Net Implementation**: Enhanced baseline U-Net with attention gates to suppress irrelevant background features
-2. **Dense Patch Sampling**: Novel training strategy using overlapping 128×128 patches to augment limited training data
-3. **Hybrid Loss Function**: Combined Dice loss with Binary Focal loss to address class imbalance
-4. **Comprehensive Evaluation**: Thorough analysis on the DRIVE benchmark dataset
-
-## Technical Achievements
-
-### Performance Metrics
-- **Accuracy**: 96.39%
-- **IoU (Intersection over Union)**: 63.83%
-- **F1-Score**: 77.87%
-
-![Performance Metrics](Figures/figure_overall_average_metrics.png)
-*Overall performance metrics achieved on the DRIVE test dataset*
-
-### Key Technical Innovations
-- Patch-based training with 63,800 overlapping patches from 20 training images
-- Attention mechanisms that improve thin vessel detection
-- Tile-and-stitch inference strategy to reconstruct full-size predictions
-- Advanced loss function combining region-overlap and hard-example mining
-
-## Repository Structure
+## Repository structure
 
 ```
-├── notebooks/
-│   ├── CV_Project.ipynb              # Main implementation notebook
-│   └── Copy_of_RBVS_UNet.ipynb      # Alternative implementation with executed cells
-├── docs/
-│   ├── main.tex                      # LaTeX source for scientific report
-│   ├── refs.bib                      # Bibliography
-│   └── scientific_report.pdf         # Final compiled scientific report
-├── figures/
-│   ├── figure_overall_average_metrics.png    # Performance metrics visualization
-│   ├── figure_dataset_example.png           # DRIVE dataset examples
-│   ├── figure_patch_examples.png            # Training patch samples
-│   ├── figure_patches_raw_pred_gt.png       # Prediction vs ground truth
-│   ├── figure_gt_vs_pred_overlay.png        # Overlay comparisons
-│   ├── figure_image_1_metrics_and_masks.png # Detailed analysis
-│   └── annot_example.png                    # Example annotations
-├── README.md                         # Project documentation
-├── requirements.txt                  # Python dependencies
-└── .gitignore                       # Git ignore rules
+src/rbvs/            # library
+  seed.py            # single-seed reproducibility
+  data.py            # DRIVE loading + 128px patch extraction (63,800 patches)
+  model.py           # AttentionUNet + BaselineUNet, split logit/prob head
+  losses.py          # binary focal (alpha=0.9, gamma=7) + Dice
+  metrics.py         # accuracy / IoU / F1
+  infer.py           # reflect-pad tile-and-stitch full-image prediction
+  explain.py         # attention-gate maps + Grad-CAM
+  analysis.py        # thin-vessel width stratification
+scripts/
+  train.py           # local-GPU retrain (primary path)
+  evaluate.py        # test-set metrics -> results.md + CSV
+  explain.py         # attention / Grad-CAM figures
+  analyze.py         # thin-vessel table + plot
+  fetch_weights.py   # download weights from the GitHub Release
+notebooks/
+  demo.ipynb         # minimal inference demo
+  colab_train.ipynb  # no-local-GPU training path (Colab)
+Figures/             # committed figures (paper evidence)
+results.md           # generated metrics (do not hand-edit)
+requirements.txt  LICENSE  .gitignore
+CV_Project.ipynb     # original TF/Keras notebook (historical record, untouched)
 ```
 
-## Implementation Details
+## Dataset
 
-### Dataset
-- **DRIVE Dataset**: Digital Retinal Images for Vessel Extraction
-- 20 training images + 20 test images
-- Resolution: 565×584 pixels
-- Challenge: Limited training data for deep learning
+**DRIVE** (Digital Retinal Images for Vessel Extraction): 20 training + 20 test
+fundus images at 584×565, with first-observer manual annotations. Images are read
+as **grayscale**; masks are read from the original `.gif` in memory (the original
+notebook's destructive in-place GIF→TIF conversion is **not** used). Set the
+dataset root in [src/rbvs/data.py](src/rbvs/data.py) (`DRIVE_ROOT`).
 
-### Methodology
+## Method
 
-#### 1. Data Preprocessing
-- Conversion of GIF mask files to TIF format
-- Grayscale image loading (abandoned green channel due to false positives)
-- Pixel intensity normalization to [0,1] range
-- Binary mask thresholding
+- **Architecture.** Attention U-Net: 4-level encoder (64/128/256/512), 1024
+  bottleneck, attention-gated skip connections, ~40.4 M parameters. The output
+  head is split into `vessel_logits` (Conv 1×1, no activation) → `vessel_prob`
+  (sigmoid); numerically identical to a single sigmoid conv but it exposes a logit
+  tensor for Grad-CAM. A plain `BaselineUNet` is also provided (see below).
+- **Patch sampling.** Overlapping 128×128 patches at stride 8 → **63,800** patches
+  from the 20 training images (vessel structure is preserved instead of resizing).
+- **Loss.** `binary_focal_loss(alpha=0.9, gamma=7)` on the probability + `(1 - Dice)`.
+- **Inference.** Reflect-pad tile-and-stitch at stride 64 with overlap averaging,
+  then threshold 0.5.
 
-#### 2. Patch Extraction Strategy
-- **Patch Size**: 128×128 pixels
-- **Training Stride**: 8 pixels (heavy overlap for data augmentation)
-- **Inference Stride**: 64 pixels (reduced redundancy)
-- **Total Patches**: ~63,800 from 20 training images
+### Hyperparameters (faithful to the original run)
 
-![Patch Examples](Figures/figure_patch_examples.png)
-*Examples of extracted patches used for training, showing input images and corresponding ground truth masks*
+| Setting | Value | Note |
+|---|---|---|
+| Optimizer | Adam | Keras default learning rate **1e-3** |
+| Batch size | 8 | |
+| Epochs | 20 | |
+| Early stopping | **none** | the notebook defined `EarlyStopping` but never passed it to `fit`; we match that |
+| Validation split | **1%** | last 1% of patches (Keras-equivalent), fixed before shuffling |
+| Loss | focal(0.9, 7) + (1−Dice) | |
+| Seed | 42 | original run was unseeded |
+| Checkpoint monitor | `val_loss` | notebook used `val_accuracy`; `val_loss` is the better signal on this imbalanced task |
 
-#### 3. Network Architecture
-- **Base**: U-Net encoder-decoder with 4 downsampling levels
-- **Enhancement**: Attention gates in skip connections
-- **Parameters**: ~40 million
-- **Key Features**:
-  - Double convolution blocks with ReLU activation
-  - 2×2 max pooling and transposed convolutions
-  - Attention-gated skip connections
-  - Sigmoid output for probability maps
+These correct several inaccuracies in the original project write-up (which listed
+Adam 1e-4, batch 4, patience-5 early stopping, and a 95/5 split — none of which
+match the code that produced the reported numbers).
 
-#### 4. Attention Mechanism
-The attention gates filter encoder features before skip connections:
-- Linear projections of encoder and decoder features
-- Additive attention with learned spatial masks
-- Feature gating to suppress irrelevant regions
-- Only 2% parameter increase over baseline U-Net
+## Results
 
-#### 5. Loss Function
-**Combined Loss = Dice Loss + Binary Focal Loss**
-- **Dice Loss**: Optimizes region overlap, handles class imbalance
-- **Binary Focal Loss**: Emphasizes hard-to-classify pixels (α=0.9, γ=7)
-- **Result**: Better detection of thin, low-contrast vessels
+See **[results.md](results.md)** (regenerated by `scripts/evaluate.py`; per-image
+numbers in `Figures/metrics_per_image.csv`). Metrics are computed over all pixels
+(no field-of-view masking), matching the original protocol.
 
-#### 6. Training Protocol
-- **Optimizer**: Adam (learning rate: 1×10⁻⁴)
-- **Epochs**: 20 with early stopping (patience: 5)
-- **Batch Size**: 4
-- **Validation Split**: 95/5 train/validation
-- **Hardware**: Google Colab Tesla T4 GPU
-- **Training Time**: ~10 minutes per epoch
+The `BaselineUNet` (plain U-Net, no attention) is **provided but not trained** —
+there is no measured baseline row here, so no baseline-vs-attention ablation is
+claimed. Training it is left as a one-command exercise.
 
-#### 7. Inference Strategy
-- Tile-and-stitch approach with overlap averaging
-- Reflection padding to handle boundaries
-- Probability accumulation and normalization
-- Binary thresholding (τ = 0.5)
+## Explainability
 
-![Patch Predictions](Figures/figure_patches_raw_pred_gt.png)
-*Visualization of patch-level predictions: raw patches, model predictions, and ground truth masks*
+- **Attention gates.** Each decoder level has an additive attention gate; gate 1
+  (deepest) localizes the coarse vessel tree, gate 4 (shallowest) sharpens
+  thin-vessel detail. `scripts/explain.py` writes per-gate and mean-attention
+  overlays for the best/median/worst-IoU test images.
+- **Grad-CAM.** Target = mean `vessel_logits` over predicted-vessel pixels
+  (`prob > 0.5`; top-k fallback), back-propagated to the last decoder feature,
+  GAP-weighted ReLU CAM.
+- **Thin-vessel analysis.** `scripts/analyze.py` skeletonizes each GT mask, assigns
+  a vessel width (2× the Euclidean distance transform at the centerline) to every
+  pixel, and pools
+  recall/precision/F1 by width bin ([1,2), [2,3), [3,5), [5,∞) px). Recall is
+  expected to increase with vessel width — thin vessels are the hard case.
 
-## Results and Analysis
+## How to run
 
-### Quantitative Results
-The model achieved competitive performance on the DRIVE benchmark:
+### Local GPU (primary path)
 
-| Model | Accuracy | IoU | F1-Score |
-|-------|----------|-----|----------|
-| Baseline U-Net | 95.50% | 62.00% | 76.40% |
-| **Our Attention U-Net** | **96.39%** | **63.83%** | **77.87%** |
-| BDDU-Net (SOTA) | 95.58% | 67.41% | 80.53% |
+```bash
+python3.11 -m venv .venv && . .venv/bin/activate
+pip install --extra-index-url https://download.pytorch.org/whl/cu128 -r requirements.txt
+# set DRIVE_ROOT in src/rbvs/data.py, then:
+env PYTHONHASHSEED=42 python -u scripts/train.py         # ~2-5 h on an RTX 3060
+python scripts/evaluate.py                                # -> results.md, CSV
+python scripts/analyze.py                                 # -> thin-vessel table
+python scripts/explain.py --images best,median,worst      # -> attention/Grad-CAM PNGs
+```
 
-### Key Improvements
-- **+2% IoU improvement** over baseline U-Net
-- Better preservation of thin vessel structures
-- Maintained high overall accuracy
-- Reduced false positive rate compared to traditional preprocessing
+### No local GPU
 
-![Qualitative Results](Figures/figure_image_1_metrics_and_masks.png)
-*Detailed analysis of segmentation results: input image, predicted mask, ground truth, and overlay comparison*
+Use [notebooks/colab_train.ipynb](notebooks/colab_train.ipynb) (Colab T4), which
+mirrors `scripts/train.py`.
 
-### Limitations Identified
-1. **Threshold Sensitivity**: Performance varies with binarization threshold
-2. **Computational Cost**: Dense patch sampling increases memory usage
-3. **Inference Time**: Overlap-averaging adds computational overhead
+### Weights
 
-![Prediction Overlay](Figures/figure_gt_vs_pred_overlay.png)
-*Overlay comparison showing ground truth (red) vs predictions (green) highlighting model performance*
+Trained weights are **not committed**; they are published as a GitHub Release
+asset. After the release exists:
 
-## Generated Visualizations
+```bash
+python scripts/fetch_weights.py     # -> checkpoints/attention_unet.weights.pt
+```
 
-The project includes comprehensive visualizations that demonstrate the effectiveness of the approach:
+## Limitations
 
-### 📊 Performance Analysis
-- **Metrics Summary**: Overall accuracy, IoU, and F1-score across test dataset
-- **Qualitative Results**: Visual comparison of predictions vs ground truth
-- **Error Analysis**: Identification of challenging cases and failure modes
+- **Threshold sensitivity.** Metrics depend on the 0.5 binarization threshold.
+- **1% validation.** A very small, fixed validation set (matching the original).
+- **Single annotator.** Only the first-observer masks are used.
+- **Retrain drift.** Because the original was unseeded and its checkpoint lost,
+  the numbers here are a faithful re-run, not a bit-exact reproduction.
 
-### 🔬 Technical Illustrations  
-- **Dataset Examples**: Representative samples from DRIVE benchmark
-- **Patch Sampling**: Visualization of training data augmentation strategy
-- **Attention Mechanism**: How attention gates improve feature selection
-- **Inference Pipeline**: Step-by-step prediction process visualization
+## Dependencies
 
-## Usage and Reproducibility
+PyTorch (CUDA 12.8 build), NumPy, OpenCV (headless), scikit-image, SciPy,
+Matplotlib, Pillow, tqdm. See [requirements.txt](requirements.txt).
 
-### Google Colab Access
-The complete implementation is available in Google Colab:
-[**Interactive Notebook with Trained Weights**](https://colab.research.google.com/drive/1DBvdWY8Vw_HIo0jMHd9fOHY-Cog2nbwD?usp=sharing)
+## License and citation
 
-### Key Dependencies
-- TensorFlow 2.x / Keras
-- OpenCV (cv2)
-- NumPy
-- Matplotlib
-- PIL (Pillow)
-- Google Colab utilities
-
-### Running the Code
-1. Open the provided Google Colab notebook
-2. Mount Google Drive for dataset access
-3. Download DRIVE dataset via Kaggle API
-4. Execute cells sequentially for training/inference
-5. Pre-trained weights included for immediate testing
-
-## Future Work
-
-### Proposed Improvements
-1. **Multi-scale Ensemble**: Combine predictions at multiple resolutions
-2. **Topology-preserving Loss**: Maintain vessel connectivity
-3. **Threshold Optimization**: Adaptive thresholding strategies
-4. **Efficiency Improvements**: Reduce computational overhead
-5. **Cross-dataset Validation**: Test generalization on other retinal datasets
-
-### Research Directions
-- Integration with clinical workflows
-- Real-time processing optimization
-- Uncertainty quantification
-- Federated learning for multi-institutional data
-
-## Impact and Applications
-
-### Medical Significance
-- **Early Diabetic Retinopathy Detection**: Automated screening capabilities
-- **Clinical Decision Support**: Quantitative vessel analysis
-- **Population Health**: Large-scale screening programs
-- **Telemedicine**: Remote diagnostic capabilities
-
-### Technical Contributions
-- Demonstrated effectiveness of attention mechanisms in medical imaging
-- Validated patch-based training for limited dataset scenarios
-- Established baseline for retinal vessel segmentation research
-
-## Acknowledgments
-
-This work was developed under the guidance of the Computer Vision course instructors at the University of Genoa. The project leverages the DRIVE dataset and builds upon established U-Net architecture principles while introducing novel enhancements for medical image segmentation.
-
-## License and Citations
-
-If you use this work in your research, please cite:
+MIT — see [LICENSE](LICENSE).
 
 ```bibtex
 @techreport{khodadadi2025rbvs,
-  title={Retinal Blood-Vessel Segmentation with Attention U-Net and Patch Sampling},
-  author={Khodadadi Hosseinabadi, Sepehr},
-  institution={University of Genoa},
-  year={2025},
-  type={Computer Vision Course Project}
+  title  = {Retinal Blood-Vessel Segmentation with Attention U-Net and Patch Sampling},
+  author = {Khodadadi, Sepehr},
+  institution = {University of Genoa},
+  year   = {2025},
+  type   = {Computer Vision Course Project}
 }
 ```
-
----
-
-**Contact**: Sepehr Khodadadi
-**University**: University of Genoa  
-**Date**: June 2025
