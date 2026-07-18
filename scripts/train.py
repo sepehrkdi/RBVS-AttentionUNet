@@ -104,7 +104,10 @@ def main():
     assert_shape = not (args.smoke or args.max_train)
     X, y = D.build_training_set(assert_shape=assert_shape)
     print(f"[train] built training set: X={X.shape} y={y.shape}")
-    X_t, y_t = nhwc_to_tensor(X), nhwc_to_tensor(y)
+    # Convert and free the NumPy copies incrementally: each array is ~4.2 GB at
+    # full size, so holding both representations at once would peak ~16.7 GB.
+    X_t = nhwc_to_tensor(X); del X
+    y_t = nhwc_to_tensor(y); del y
 
     # Keras-equivalent validation_split: the LAST val_split fraction is the fixed
     # validation set (chosen before shuffling); only the train part is shuffled.
@@ -145,7 +148,7 @@ def main():
             loss = combined_loss(prob, yb)
             loss.backward()
             optimizer.step()
-            run_loss += float(loss)
+            run_loss += float(loss.detach())
             n_batches += 1
             with torch.no_grad():
                 run_correct += int(((prob >= 0.5).float() == yb).sum())

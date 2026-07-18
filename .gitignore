@@ -20,5 +20,8 @@ artifacts/
 *.weights.h5
 *.npy
 
+# Run logs
+*.log
+
 # OS
 .DS_Store
