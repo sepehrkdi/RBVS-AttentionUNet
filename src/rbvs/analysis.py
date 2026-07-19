@@ -1,10 +1,16 @@
 """Thin-vessel width stratification.
 
-For each test image: skeletonize the GT mask, measure vessel half-width as the
-Euclidean distance transform (EDT) at skeleton points (width = 2*EDT), propagate
-that width to every pixel via its nearest skeleton point, bin pixels by width,
-and pool TP/FN/FP per bin across all images. Recall is expected to increase with
-vessel width — thin vessels are the hard case — which analyze.py asserts.
+For each test image: skeletonize the GT mask, measure vessel width from the
+Euclidean distance transform (EDT) at skeleton points, propagate that width to
+every pixel via its nearest skeleton point, bin pixels by width, and pool
+TP/FN/FP per bin across all images. Recall is expected to increase with vessel
+width — thin vessels are the hard case — which analyze.py asserts.
+
+Width estimator: for a stripe of width w px the centerline EDT is ~(w+1)/2, so
+width = 2*EDT - 1 (w=1 -> EDT 1.0 -> 1; w=3 -> EDT 2.0 -> 3). Using 2*EDT alone
+would floor the estimate at 2.0 and leave the [1,2) bin structurally empty.
+Even widths quantize down by one (a 2px stripe reads as 1) — an inherent limit
+of centerline-EDT width estimation on a discrete grid.
 
 Predicted-positive background pixels (false positives) are attributed to the
 width bin of their nearest vessel, so precision/F1 are well-defined per bin.
@@ -16,13 +22,22 @@ from scipy import ndimage
 from skimage.morphology import skeletonize
 
 # Width bins in pixels: [lo, hi).
-BINS = [(1.0, 2.0), (2.0, 3.0), (3.0, 5.0), (5.0, np.inf)]
-BIN_LABELS = ["[1,2)", "[2,3)", "[3,5)", "[5,inf)"]
+#
+# On a discrete grid the centerline EDT is quantized, so widths concentrate on
+# odd integers (1, 3, 5, ...) plus diagonal-induced values (1.83, 3.47, 4.66...).
+# Measured over the 20 DRIVE test images (577,945 vessel pixels) the observed
+# widths jump straight from 1.83 to 3.00 — nothing lands in [2,3). These edges
+# therefore replace a nominal [1,2)/[2,3)/[3,5)/[5,inf) split, which would leave
+# [2,3) structurally empty; they populate all four bins at roughly
+# 30/32/26/12% of vessel pixels while staying ordered thin -> thick.
+BINS = [(1.0, 2.0), (2.0, 4.0), (4.0, 6.0), (6.0, np.inf)]
+BIN_LABELS = ["[1,2)", "[2,4)", "[4,6)", "[6,inf)"]
 
 
 def width_map_full(gt_mask):
     """Per-pixel vessel width (float32), assigned to EVERY pixel via its nearest
-    skeleton point (width = 2*EDT(GT) sampled at the skeleton centerline)."""
+    skeleton point. Width = 2*EDT(GT) - 1 sampled at the skeleton centerline
+    (see the module docstring for why the -1 matters)."""
     gt = (np.asarray(gt_mask).squeeze() > 0).astype(np.uint8)
     if gt.sum() == 0:
         return np.zeros(gt.shape, dtype=np.float32)
@@ -31,7 +46,7 @@ def width_map_full(gt_mask):
     if skel.sum() == 0:
         return np.zeros(gt.shape, dtype=np.float32)
     width_skel = np.zeros(gt.shape, dtype=np.float32)
-    width_skel[skel] = 2.0 * edt[skel]
+    width_skel[skel] = np.maximum(2.0 * edt[skel] - 1.0, 1.0)
     # EDT of the skeleton complement returns, per pixel, the index of the nearest
     # skeleton point -> propagate its centerline width to the whole image.
     _, (iy, ix) = ndimage.distance_transform_edt(~skel, return_indices=True)

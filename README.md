@@ -99,10 +99,12 @@ claimed. Training it is left as a one-command exercise.
   (`prob > 0.5`; top-k fallback), back-propagated to the last decoder feature,
   GAP-weighted ReLU CAM.
 - **Thin-vessel analysis.** `scripts/analyze.py` skeletonizes each GT mask, assigns
-  a vessel width (2× the Euclidean distance transform at the centerline) to every
-  pixel, and pools
-  recall/precision/F1 by width bin ([1,2), [2,3), [3,5), [5,∞) px). Recall is
-  expected to increase with vessel width — thin vessels are the hard case.
+  a vessel width to every pixel, and pools recall/precision/F1 by width bin
+  ([1,2), [2,4), [4,6), [6,∞) px). Width is `2×EDT − 1` at the skeleton
+  centerline, which inverts the distance transform correctly (a 1-pixel vessel
+  measures 1, not 2); the bin edges are chosen so all four bins are populated
+  given the grid quantization. Recall is expected to increase with vessel
+  width — thin vessels are the hard case.
 
 ## How to run
 
