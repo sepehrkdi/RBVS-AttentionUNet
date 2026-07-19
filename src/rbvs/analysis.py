@@ -73,6 +73,26 @@ def stratified_counts(gt_mask, pred_mask):
     return out
 
 
+def boundary_diagnostic(gt_mask, pred_mask, min_width=6.0):
+    """Where do the errors on WIDE vessels sit — at the boundary or the centreline?
+
+    Returns (fn_centreness, tp_centreness, n_fn, n_tp) where centreness is
+    EDT / local-half-width, so 1.0 is the centreline and 0 the boundary. Wide
+    vessels carry a bright central reflex that segmenters often miss, which would
+    show up as centre-weighted false negatives; edge-weighted false negatives
+    instead indicate ordinary boundary under-segmentation.
+    """
+    gt = (np.asarray(gt_mask).squeeze() > 0).astype(np.uint8)
+    pred = (np.asarray(pred_mask).squeeze() > 0).astype(np.uint8)
+    w = width_map_full(gt)
+    edt = ndimage.distance_transform_edt(gt)
+    wide = (w >= min_width) & (gt == 1)
+    centreness = np.clip(edt / np.maximum(w / 2.0, 1e-6), 0, 1)
+    fn = centreness[wide & (pred == 0)]
+    tp = centreness[wide & (pred == 1)]
+    return fn, tp
+
+
 def pool_scores(per_image_counts):
     """Pool a list of per-image count dicts into per-bin recall/precision/F1.
 
