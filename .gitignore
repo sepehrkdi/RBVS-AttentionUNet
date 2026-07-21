@@ -1,0 +1,27 @@
+# Environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Model weights & prediction artifacts (distributed as a GitHub Release asset,
+# never committed). Figures/*.png ARE committed (they are paper evidence).
+checkpoints/
+artifacts/
+*.pt
+*.pth
+*.h5
+*.keras
+*.weights.h5
+*.npy
+
+# Run logs
+*.log
+
+# OS
+.DS_Store

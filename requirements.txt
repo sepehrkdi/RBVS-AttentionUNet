@@ -1,0 +1,25 @@
+# RBVS-AttentionUNet — PyTorch (local GPU) requirements.
+#
+# Validated on an NVIDIA RTX 3060 (12 GB, driver 555.42.06 / CUDA 12.5). Torch is
+# the CUDA 12.8 build; it runs on driver 555 via CUDA minor-version compatibility
+# (verified with a real GPU matmul), and supports the RTX 3060 (Ampere, sm_86).
+#
+# Fresh install on another machine:
+#   python3.11 -m venv .venv && . .venv/bin/activate
+#   pip install --extra-index-url https://download.pytorch.org/whl/cu128 -r requirements.txt
+#
+# NOTE (this machine): to avoid re-downloading ~5 GB of CUDA wheels, the repo venv
+# reuses an already-present torch via a .pth link and installs only opencv/skimage
+# locally. The pins below are the exact versions that link resolves to, so a clean
+# standalone install reproduces the same environment.
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+torch==2.10.0
+
+numpy==2.4.3
+scipy==1.17.1
+matplotlib==3.10.8
+Pillow==12.1.1
+tqdm==4.67.3
+opencv-python-headless==5.0.0.93
+scikit-image==0.26.0
