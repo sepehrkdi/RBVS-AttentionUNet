@@ -10,7 +10,7 @@ package, seeded training, explainability artifacts, and honest reporting.
 > re-implements the exact architecture and hyperparameters in PyTorch and
 > **retrains from scratch** on a local GPU. The numbers reported in
 > [results.md](results.md) come from that seeded retrain and are the committed
-> truth — they may drift slightly from the originally reported
+> truth - they may drift slightly from the originally reported
 > 0.9639 / 0.6383 / 0.7787 (accuracy / IoU / F1). The original TF notebook is kept
 > verbatim as [CV_Project.ipynb](CV_Project.ipynb) for provenance.
 
@@ -76,7 +76,7 @@ dataset root in [src/rbvs/data.py](src/rbvs/data.py) (`DRIVE_ROOT`).
 | Checkpoint monitor | `val_loss` | notebook used `val_accuracy`; `val_loss` is the better signal on this imbalanced task |
 
 These correct several inaccuracies in the original project write-up (which listed
-Adam 1e-4, batch 4, patience-5 early stopping, and a 95/5 split — none of which
+Adam 1e-4, batch 4, patience-5 early stopping, and a 95/5 split - none of which
 match the code that produced the reported numbers).
 
 ## Results
@@ -92,13 +92,13 @@ all pixels (no field-of-view masking), mean ± std across the 20 images:
 All three metrics land within 0.5 pp of the originally reported numbers, across
 both a framework port and a seeded re-run. Full table and per-image numbers:
 **[results.md](results.md)** and `Figures/metrics_per_image.csv`, both regenerated
-by `scripts/evaluate.py` — do not hand-edit.
+by `scripts/evaluate.py` - do not hand-edit.
 
 Training used the best-`val_loss` checkpoint (epoch 16 of 20). Note that eval-mode
 metrics are meaningless until the BatchNorm running statistics converge: at epoch 1
 the model scores IoU 0.09, and by epoch 2 it is already at 0.63.
 
-The `BaselineUNet` (plain U-Net, no attention) is **provided but not trained** —
+The `BaselineUNet` (plain U-Net, no attention) is **provided but not trained** -
 there is no measured baseline row here, so no baseline-vs-attention ablation is
 claimed. Training it is left as a one-command exercise.
 
@@ -111,7 +111,7 @@ claimed. Training it is left as a one-command exercise.
   (low on vessels, high on background), and gate 4 (shallowest) is fine-grained
   and noisy. `scripts/explain.py` writes per-gate and mean-attention overlays for
   the best/median/worst-IoU test images so this is inspectable rather than
-  asserted — see `Figures/attention_*.png`.
+  asserted - see `Figures/attention_*.png`.
 - **Grad-CAM.** Target = mean `vessel_logits` over predicted-vessel pixels
   (`prob > 0.5`; top-k fallback), back-propagated to the last decoder feature,
   GAP-weighted ReLU CAM.
@@ -170,7 +170,7 @@ Matplotlib, Pillow, tqdm. See [requirements.txt](requirements.txt).
 
 ## License and citation
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
 
 ```bibtex
 @techreport{khodadadi2025rbvs,
