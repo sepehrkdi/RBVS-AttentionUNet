@@ -5,6 +5,12 @@ Patch-based training, hybrid Dice + focal loss, tile-and-stitch inference, and a
 at what the attention gates actually learned, which is not what the architecture diagram
 promises.
 
+![Input, predicted vessel probability, Grad-CAM](Figures/gradcam_best_02.png)
+
+*The trained model on a test image: the fundus photograph going in, the vessel probability
+coming out, and where the network was looking when it decided. All three panels come from the
+seeded PyTorch retrain described below.*
+
 This repo is one half of a pair. The other half is
 [ALoG](https://github.com/sepehrkdi/retinal-vessel-segmentation-alog), which solves the same
 task with three hand-set numbers and no training at all. Same dataset, same test split,
@@ -26,7 +32,7 @@ was done by hand, by a trained observer, one vessel at a time.
 </tr>
 <tr>
 <td align="center"><em>What the camera gives you (584x565).</em></td>
-<td align="center"><em>What an expert's answer looks like.</em></td>
+<td align="center"><em>What an expert's answer looks like. This is the target.</em></td>
 </tr>
 </table>
 
@@ -52,8 +58,9 @@ the task depends on. Patching preserves every vessel at its true scale.
 
 ![Training patches](Figures/figure_patch_examples.png)
 
-*Two sampled patches with their masks. At this scale the thin vessels are still several pixels
-wide and still visible, which is exactly the point.*
+*Two sampled patches with their masks. Compare these to the full fundus image above: at this
+scale the thin vessels are still several pixels wide and still clearly visible, which is
+exactly the point. Resizing the whole image down to 128x128 would have erased them.*
 
 ## Designing the rest
 
@@ -67,19 +74,34 @@ getting wrong.
 
 ![Patch predictions against ground truth](Figures/figure_patches_raw_pred_gt.png)
 
-*Raw patch, predicted P(vessel), ground truth. The predictions are close to binary, which is
-the focal term doing its job.*
+*Raw patch, predicted P(vessel) on the colour scale at the centre, ground truth. Note how
+little of the prediction is mid-scale green or teal: the output is nearly all dark purple or
+bright yellow. That confident, near-binary behaviour is the focal term doing its job.*
 
 **Architecture.** A 4-level encoder (64/128/256/512) into a 1024 bottleneck, with attention
 gates on the skip connections and **40.4 M parameters**. The intent behind the gates is that
 each decoder level should learn to weight its own skip connection, letting vessel features
 through and suppressing background. The output head is split into `vessel_logits` (Conv 1x1, no
 activation) and then `vessel_prob` (sigmoid); numerically this is identical to a single sigmoid
-conv, but it exposes a logit tensor for the Grad-CAM analysis added in this
-re-implementation (see [What actually happened](#what-actually-happened)).
+conv, but it exposes a logit tensor for the Grad-CAM analysis further down.
 
 **Getting back to a full image.** The model sees 128x128 patches, so inference reflect-pads the
 image, tiles it at stride 64, averages the overlaps and thresholds at 0.5.
+
+### Training
+
+![Training curves](Figures/training_curves.png)
+
+**How to read this.** Blue is the loss on the training patches, red is the loss on the held-out
+1% validation split, and the dashed line marks the checkpoint that was kept. The blue curve
+drops smoothly and keeps dropping. The red one is violently jagged, because 1% of the patches
+is a very small sample and every epoch lands somewhere different. That noise is the reason
+this repo monitors `val_loss` rather than `val_accuracy`, and it is the single clearest
+argument in the repo for the "1% validation" entry in the limitations.
+
+One practical note not visible on this plot: eval-mode metrics are meaningless until the
+BatchNorm running statistics converge. At epoch 1 the model scores IoU 0.09; by epoch 2 it is
+already at 0.63.
 
 ### Hyperparameters (faithful to the original run)
 
@@ -107,12 +129,21 @@ produced the reported numbers.
 The attention gates were the interesting part of the architecture, so they were the first thing
 inspected. They do not behave the way the tidy coarse-to-fine story predicts.
 
-![Attention gates](Figures/attention_worst_08.png)
+![Attention gates, hardest test image](Figures/attention_worst_08.png)
 
-Gates 1 and 2, the deepest, are close to **spatially uniform**: they are not selecting anything.
-Gate 4, the shallowest, is fine-grained and mostly **noise**. Gate 3 carries almost all of the
-structure, and it responds **inversely**: it is bright across the background and dark along the
-vessels, the opposite of the "attend to the vessels" reading.
+**How to read this.** Top left is the input; the other five panels are the four attention gates
+and their mean, rendered as heatmaps over the retina. Yellow and red are high gate activation,
+dark blue is low.
+
+Gates 1 and 2, the deepest, are almost flat: a uniform blue wash, selecting nothing. Gate 4,
+the shallowest, is a fine-grained speckle that looks like noise. **Gate 3 carries essentially
+all of the structure, and look at its colours: the vessel tree is drawn in blue and cyan
+against an orange-red background.** It is *low* on the vessels and *high* everywhere else, the
+exact inverse of "attend to the vessels".
+
+The same pattern holds on the easiest image, so it is not an artefact of one hard case:
+
+![Attention gates, easiest test image](Figures/attention_best_02.png)
 
 That is worth stating plainly rather than quietly cropping out of the figure. The gates are
 doing something useful, since the model works, but "attention gates highlight the vessels" is
@@ -121,11 +152,13 @@ not a description of this trained model, and a README that claimed it would be w
 The model itself is not confused, though, which you can see by asking a different question.
 Grad-CAM on the vessel logits lands where you would hope:
 
-![Grad-CAM](Figures/gradcam_worst_08.png)
+![Grad-CAM, hardest test image](Figures/gradcam_worst_08.png)
 
-*Input, predicted P(vessel), Grad-CAM on the mean vessel logit over predicted-vessel pixels,
-back-propagated to the last decoder feature. "The model looks at the vessel tree" holds. "The
-gates look at the vessel tree" does not. Both statements are in this repo because both are true.*
+**How to read this.** Input, predicted P(vessel), then the Grad-CAM heatmap: bright green and
+yellow mark the pixels whose features most drove the vessel decision. The bright tracery
+follows the vessel tree almost exactly. **"The model looks at the vessel tree" holds. "The
+gates look at the vessel tree" does not.** Both statements are in this repo because both are
+true, and only one of them is the story you would expect from the architecture's name.
 
 ### Results
 
@@ -141,12 +174,22 @@ field-of-view masking, mean +/- std across the 20 images:
 > run was **unseeded** and its checkpoint was **lost**. This repo re-implements the same
 > architecture and hyperparameters in PyTorch and retrains from scratch. All three metrics land
 > within 0.5 pp of the originally reported numbers across both a framework port and a seeded
-> re-run, but the retrained figures in [results.md](results.md) are the committed truth. The
-> original TF notebook is kept verbatim as [CV_Project.ipynb](CV_Project.ipynb) for provenance.
+> re-run, but the retrained figures are the committed truth. The original TF notebook is kept
+> verbatim as [CV_Project.ipynb](CV_Project.ipynb) for provenance.
 
-Training used the best-`val_loss` checkpoint, epoch 16 of 20. One practical note: eval-mode
-metrics are meaningless until the BatchNorm running statistics converge. At epoch 1 the model
-scores IoU 0.09; by epoch 2 it is already at 0.63.
+Here is what a prediction looks like against the ground truth, pixel by pixel:
+
+![Prediction against ground truth, per-image breakdown](Figures/figure_image_1_metrics_and_masks.png)
+
+**How to read this.** Green channel, predicted mask, ground-truth mask, and at the bottom the
+two overlaid: **green is agreement, red is ground-truth vessel the model missed.** The red is
+concentrated in short stubs at the ends of fine branches and along vessel edges, not in whole
+missing trunks. That is the failure mode the width analysis below quantifies.
+
+> This particular rendering is from the **original TF run**, which is why its header reads
+> 0.9639 / 0.6661 / 0.7996; the seeded retrain scores 0.9605 / 0.6534 / 0.7904 on this same
+> image. It is kept because the overlay is the clearest picture of *where* the errors sit, and
+> the error pattern is unchanged.
 
 The `BaselineUNet` (plain U-Net, no attention) is **provided but not trained**. There is no
 measured baseline row here, so no attention-versus-no-attention ablation is claimed.
@@ -157,6 +200,10 @@ The same width-stratified audit as the sibling repo: skeletonize each ground-tru
 a width to every vessel pixel, pool recall and precision by width bin.
 
 ![Recall by vessel width](Figures/thin_vessel_recall.png)
+
+**How to read this.** Every ground-truth vessel pixel is binned by how wide its vessel is, and
+each bar is the fraction of that bin the model found. A width-agnostic segmenter would give
+flat bars. The leftmost bar, the 1-2 pixel capillaries, is the one that falls away.
 
 | Width (px) | GT pixels | Recall | Precision | F1 |
 |---|---|---|---|---|
@@ -173,13 +220,21 @@ vessels have a bright central reflex, a specular stripe down the middle, which i
 cause of segmenters splitting a vessel in two. That is not what is happening here: 55.8% of the
 false negatives fall in the outer third of the vessel against 12.6% of the true positives, and
 mean centre-ness is 0.480 versus 0.733. The misses are at the **boundaries**, not the
-centrelines. This is ordinary boundary under-segmentation, and the tempting central-reflex
-story is wrong.
+centrelines, which matches the thin red edging visible in the overlay above. This is ordinary
+boundary under-segmentation, and the tempting central-reflex story is wrong.
 
 ## The trade
 
-Same dataset, same 20-image test split, one method learns its filters and the other is handed
+Same dataset, same 20-image test split. One method learns its filters, the other is handed
 them:
+
+![ALoG versus Attention U-Net by vessel width](Figures/comparison_thin_vessel.png)
+
+**How to read this.** Blue is this repo, 40.4 M parameters trained for hours on a GPU. Orange
+is the sibling repo: three hand-set numbers and no training whatsoever. If learned features
+were decisively better, the blue bars would tower over the orange. They do not. On 2-4 px
+vessels the hand-built filter is marginally **ahead**, and on the capillaries that are
+clinically hardest and diagnostically earliest, the entire advantage is 0.554 against 0.590.
 
 | | [ALoG](https://github.com/sepehrkdi/retinal-vessel-segmentation-alog) (hand-built) | Attention U-Net (this repo) |
 |---|---|---|
@@ -191,13 +246,11 @@ them:
 | Recall, 2-4 px vessels | 0.833 | 0.821 |
 
 Forty million parameters and a GPU buy about **6 points of F1** over three numbers you can
-write on a napkin. On the capillaries, the clinically hardest and diagnostically earliest part
-of the tree, the gap is 0.554 against 0.590, and on 2-4 px vessels the hand-built filter is
-marginally ahead. The learned model wins, and the size of the win is worth knowing.
+write on a napkin. The learned model wins, and the size of the win is worth knowing.
 
 > **Protocol note.** ALoG metrics are FOV-restricted; this repo's are whole-image with no FOV
 > masking. F1 and IoU have no true-negative term, so they stay broadly comparable. **Accuracy
-> does not** and is deliberately absent from this table. The thin-vessel rows are exactly
+> does not** and is deliberately absent from this table. The thin-vessel bars are exactly
 > comparable: both are pooled over identical ground-truth pixel counts.
 
 ## Dataset
@@ -222,22 +275,24 @@ src/rbvs/            # library
   analysis.py        # thin-vessel width stratification
 scripts/
   train.py           # local-GPU retrain (primary path)
-  evaluate.py        # test-set metrics -> results.md + CSV
+  evaluate.py        # test-set metrics -> CSV
   explain.py         # attention / Grad-CAM figures
   analyze.py         # thin-vessel table + plot
+  figures.py         # training curves + the cross-repo comparison chart
   fetch_weights.py   # download weights from the GitHub Release
 notebooks/
   demo.ipynb         # minimal inference demo
   colab_train.ipynb  # no-local-GPU training path (Colab)
-Figures/             # committed figures (the evidence above)
-results.md           # generated metrics (do not hand-edit)
+Figures/             # every figure in this README, plus per-image CSVs
+results.md           # regenerated by evaluate.py (the README above is self-contained)
 requirements.txt  LICENSE  .gitignore
 CV_Project.ipynb     # original TF/Keras notebook (historical record, untouched)
 ```
 
-`Figures/figure_overall_average_metrics.png` and `figure_gt_vs_pred_overlay.png` are console
-output and overlays from the **original TF run**, kept for provenance. They show 0.9639 /
-0.6383 / 0.7787, which are the pre-retrain numbers; [results.md](results.md) supersedes them.
+Per-image numbers live in `Figures/metrics_per_image.csv` and are regenerated by
+`scripts/evaluate.py` rather than hand-edited. `Figures/figure_overall_average_metrics.png` and
+`figure_gt_vs_pred_overlay.png` are console output and overlays from the **original TF run**,
+kept for provenance; the retrained numbers above supersede them.
 
 ## How to run
 
@@ -248,9 +303,10 @@ python3.11 -m venv .venv && . .venv/bin/activate
 pip install --extra-index-url https://download.pytorch.org/whl/cu128 -r requirements.txt
 # set DRIVE_ROOT in src/rbvs/data.py, then:
 env PYTHONHASHSEED=42 python -u scripts/train.py         # ~2-5 h on an RTX 3060
-python scripts/evaluate.py                                # -> results.md, CSV
-python scripts/analyze.py                                 # -> thin-vessel table
+python scripts/evaluate.py                                # -> results.md + metrics CSV
+python scripts/analyze.py                                 # -> thin-vessel table + plot
 python scripts/explain.py --images best,median,worst      # -> attention/Grad-CAM PNGs
+python scripts/figures.py                                 # -> training curves, comparison chart
 ```
 
 ### No local GPU
@@ -270,7 +326,8 @@ python scripts/fetch_weights.py     # -> checkpoints/attention_unet.weights.pt
 ## Limitations
 
 - **Threshold sensitivity.** All metrics depend on the 0.5 binarization threshold.
-- **1% validation.** A very small, fixed validation set, matching the original run.
+- **1% validation.** A very small, fixed validation set, matching the original run. The jagged
+  red curve in the training plot is what that costs.
 - **No FOV masking.** Metrics are whole-image, unlike the sibling repo. See the protocol note.
 - **No measured baseline.** `BaselineUNet` exists but was not trained, so the value of the
   attention gates is not quantified here.
